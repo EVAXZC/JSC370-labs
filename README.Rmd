@@ -95,9 +95,11 @@ library(dtplyr) # translator between dplyr (tidyverse) and data.table
 library(dplyr)
 
 ```
+
 ```{r}
 library(ggplot2)
 library(leaflet)
+library(mgcv)
 ```
 
 
@@ -227,10 +229,23 @@ Knit the document, commit your changes, and save it on GitHub. Don't forget to a
 ## Question 2: Representative station per state
 
 Just like the previous question, you are asked to identify what is the most representative, the median, station per state. This time, instead of looking at one variable at a time, look at the euclidean distance. If multiple stations show in the median, select the one located at the lowest latitude.
+```{r}
+# mean for each station
+met_state_lz <- met %>% 
+  group_by(USAFID) %>% 
+  summarise(
+    temp = mean(temp, na.rm = TRUE),
+    wind.sp = mean(wind.sp, na.rm = TRUE),
+    atm.press = mean(atm.press, na.rm = TRUE),
+    STATE = unique(STATE), lat = unique(lat, na.rm = TRUE)[1], lon = unique(lon, na.rm = TRUE)[1]
+  ) 
+met_state_lz <- na.omit(met_state_lz)
+met_state_lz
+```
 
 ```{r}
-met_avg <- met_lz %>%
-  group_by(USAFID) %>%
+met_avg <- met %>%
+  group_by(STATE) %>%
   summarise(
     across(
       c(temp, wind.sp, atm.press),
@@ -242,10 +257,32 @@ met_avg <- met_lz %>%
   )
 
 ```
+
 ```{r}
-met_merge <- met_lz %>% left_join(met_avg, by = "STATE") %>% as.data.frame()
+head(met_avg)
+```
+
+
+```{r}
+met_merge <- met_avg %>% left_join(met_state_lz, by = "STATE") %>% as.data.frame()
 met_merge
 ```
+```{r}
+met_state_med = met_merge %>%
+  mutate(ecl_diff = sqrt((temp.x - temp.y)^2 +(wind.sp.x - wind.sp.y)^2+ (atm.press.x - atm.press.y)^2))
+na.omit(met_state_med)
+```
+```{r}
+met_state <- met_state_med %>%
+  group_by(STATE) %>%
+  slice_min(lat)
+met_state
+```
+
+```{r}
+length(unique(met_state$STATE)) == nrow(met_state)
+```
+no duplicate value in STATE.
 
 Knit the doc and save it on GitHub.
 
@@ -254,8 +291,40 @@ Knit the doc and save it on GitHub.
 For each state, identify what is the station that is closest to the mid-point of the state. Combining these with the stations you identified in the previous question, use `leaflet()` to visualize all ~100 points in the same figure, applying different colors for those identified in this question.
 
 ```{r}
-
+met_loc <- met %>% 
+  group_by(USAFID) %>%
+  summarise(lon = mean(lon, na.rm = TRUE),
+            lat = mean(lat, na.rm = TRUE),
+            STATE = STATE)
+head(met_loc)
 ```
+
+
+```{r}
+## Obtain the midpoint of the state using the avg of the lat and lon of the stations
+met_loc_mid <- met_loc %>% 
+  group_by(STATE) %>%
+  summarise(across(
+    c(lat, lon),
+    function(x) mean(x, na.rm = TRUE)
+  ))
+```
+
+```{r}
+met_merge <- met_loc_mid %>% left_join(met_loc, by = "STATE") %>% as.data.frame()
+met_merge
+```
+```{r}
+met_loc$euclid <- sqrt((met_merge$lon.x -  met_merge$lon.y)^2 + (met_merge$lat.x -  met_merge$lat.y)^2)
+met_loc
+```
+
+```{r}
+met_loc_mid <- met_loc %>% 
+  group_by(STATE) %>%
+  slice(which.min(euclid))
+```
+
 
 Knit the doc and save it on GitHub.
 
@@ -270,6 +339,21 @@ Start by computing the states' average temperature. Use that measurement to clas
 - High: temp >= 25
 
 ```{r}
+# create new variable
+met_temp<- met %>% 
+  mutate(temp_level = case_when(
+    temp < 20 ~ "Low",
+    temp >= 20 & temp < 25 ~ "Mid",
+    temp >= 25 ~ "High"
+  ))
+
+met_temp <- met %>% 
+   group_by(STATE)  %>% 
+  summarize(n = n(),
+            median_temp = quantile(temp, 0.5, na.rm=T),
+            median_wind_sp = quantile(wind.sp, 0.5, na.rm=T),
+            median_atm_press = quantile(atm.press, 0.5, na.rm=T))
+met_temp
 
 ```
 
